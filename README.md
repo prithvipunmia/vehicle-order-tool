@@ -1,3 +1,55 @@
+# 🚗 Vehicle Order Tool
+
+A Next.js web application for managing vehicle orders.  
+Orders are submitted via a simple form and stored in **Google Sheets** for tracking.  
+Optional **Firebase integration** adds authentication and real‑time features.  
+Deployed seamlessly with **Vercel**.
+
+---
+
+## 📖 Overview
+
+The Vehicle Order Tool streamlines order collection by combining a modern Next.js frontend with Google Sheets as a lightweight backend.  
+It’s designed for scalability, portability, and ease of deployment.
+
+---
+
+## 🛠 Tech Stack
+
+- **Frontend:** Next.js (React + TypeScript)
+- **Styling:** Tailwind CSS
+- **Backend/API:** Next.js API routes
+- **Database/Storage:** Google Sheets (primary), Firebase (optional)
+- **Hosting:** Vercel
+- **Version Control:** Git + GitHub
+
+---
+
+## 🔑 Environment Variables
+
+Environment variables are stored securely in `.env.local` (ignored by Git) and mirrored in Vercel’s dashboard.
+
+### Firebase (public)
+
+- `NEXT_PUBLIC_FIREBASE_API_KEY`
+- `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`
+- `NEXT_PUBLIC_FIREBASE_PROJECT_ID`
+- `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET`
+- `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID`
+- `NEXT_PUBLIC_FIREBASE_APP_ID`
+
+### Google Sheets (private)
+
+- `GOOGLE_CLIENT_EMAIL`
+- `GOOGLE_PRIVATE_KEY`
+- `GOOGLE_SHEET_ID`
+
+---
+
+## 📂 Project Structure
+
+---
+
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
 ## Getting Started
