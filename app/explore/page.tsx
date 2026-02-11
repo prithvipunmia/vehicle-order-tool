@@ -25,12 +25,12 @@ export default async function ExplorePage() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {bikes.map((bike) => (
             <div
-              key={bike.id}
+              key={bike.BikeId}
               className="border p-4 rounded bg-white shadow-sm flex flex-col gap-2"
             >
-              <h3 className="font-semibold">{bike.name}</h3>
-              <p className="text-gray-600">{bike.variant}</p>
-              <p className="text-blue-600 font-bold">₹{bike.onRoadPrice}</p>
+              <h3 className="font-semibold">{bike.VehicleName}</h3>
+              <p className="text-gray-600">{bike.Variant}</p>
+              <p className="text-blue-600 font-bold">₹{bike.OnRoadPrice}</p>
             </div>
           ))}
         </div>
