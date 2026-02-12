@@ -2,7 +2,17 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import type { Bike } from "../../explore/page";
+
+interface Bike {
+  BikeId: string;
+  VehicleName: string;
+  Variant: string;
+  ExShowroomPrice: string;
+  Tax: string;
+  Insurance: string;
+  Ew: string;
+  OnRoadPrice: string;
+}
 
 interface OrderItem {
   bikeKey: string;
@@ -42,12 +52,13 @@ export default function ConfirmationPage() {
             const qty = quantities[bikeKey] ?? 0;
 
             if (qty > 0) {
-              const subtotal = qty * (bike.OnRoadPrice || 0);
+              const price = parseFloat(bike.OnRoadPrice || "0");
+              const subtotal = qty * price;
               items.push({
                 bikeKey,
                 variant,
                 vehicleName: bike.VehicleName,
-                price: bike.OnRoadPrice || 0,
+                price: price,
                 quantity: qty,
                 subtotal,
               });
