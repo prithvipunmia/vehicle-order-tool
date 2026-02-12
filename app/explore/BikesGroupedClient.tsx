@@ -18,12 +18,27 @@ import type { Bike, GroupedBike } from "./page";
  */
 export function BikesGroupedClient({ groupedBikes }: { groupedBikes: GroupedBike[] }) {
   const router = useRouter();
+  
+  // Generate unique key for each bike with fallback strategy - memoized
+  const getBikeKey = useMemo(() => {
+    return (variant: string, bike: Bike, index: number): string => {
+      // Use BikeId as primary key if available
+      if (bike.BikeId && bike.BikeId.trim()) {
+        // But append index to ensure uniqueness even if BikeIds are duplicated
+        return `${bike.BikeId}-${index}`;
+      }
+      // Fallback: construct unique key from available data
+      const fallbackKey = `${variant}-${bike.VehicleName}-${bike.ExShowroomPrice}`;
+      return `${fallbackKey}-${index}`;
+    };
+  }, []);
+
   // Build initial quantities keyed by bike ID
   const initial = useMemo(() => {
     const map: Record<string, number> = {};
     groupedBikes.forEach((g) => {
-      g.items.forEach((bike) => {
-        const bikeKey = bike.BikeId || `${g.variant}-${bike.VehicleName}`;
+      g.items.forEach((bike, idx) => {
+        const bikeKey = getBikeKey(g.variant, bike, idx);
         map[bikeKey] = 0;
       });
     });
@@ -32,28 +47,37 @@ export function BikesGroupedClient({ groupedBikes }: { groupedBikes: GroupedBike
 
   const [quantities, setQuantities] = useState<Record<string, number>>(() => {
     try {
-      const raw = typeof window !== "undefined" && localStorage.getItem("bike-quantities");
-      return raw ? JSON.parse(raw) : initial;
+      // Always start with initial keys only, ignore stale localStorage
+      return initial;
     } catch {
       return initial;
     }
   });
 
-  // Keep quantities in sync if groupedBikes changes (e.g., new groups added)
+  // Whenever groupedBikes changes, sync quantities with valid keys only
   useEffect(() => {
+    console.log("=== BIKES GROUPING RECOMPUTED ===");
+    console.log("GroupedBikes:", groupedBikes);
+    
     setQuantities((prev) => {
-      const next = { ...prev };
-      Object.keys(initial).forEach((k) => {
-        if (!(k in next)) next[k] = 0;
+      const next: Record<string, number> = {};
+      
+      // Only keep quantities for bikes that currently exist
+      groupedBikes.forEach((g) => {
+        console.log(`Processing variant: ${g.variant}`);
+        g.items.forEach((bike, idx) => {
+          const bikeKey = getBikeKey(g.variant, bike, idx);
+          console.log(`  Bike ${idx}: BikeId="${bike.BikeId}", Name="${bike.VehicleName}", Key="${bikeKey}"`);
+          next[bikeKey] = prev[bikeKey] ?? 0;
+        });
       });
-      // Remove keys that no longer exist
-      Object.keys(next).forEach((k) => {
-        if (!(k in initial)) delete next[k];
-      });
+      
+      console.log("Final quantity keys:", Object.keys(next));
+      console.log("Keys are unique?", new Set(Object.keys(next)).size === Object.keys(next).length);
       return next;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [groupedBikes.length]);
+  }, [groupedBikes]);
 
   useEffect(() => {
     try {
@@ -61,11 +85,25 @@ export function BikesGroupedClient({ groupedBikes }: { groupedBikes: GroupedBike
     } catch {}
   }, [quantities]);
 
+  // On mount, clear any stale localStorage data
+  useEffect(() => {
+    // This ensures we start with a clean slate for new bike configurations
+    return () => {
+      // Cleanup is optional, but we keep localStorage for persistence
+    };
+  }, []);
+
   const changeQty = (bikeKey: string, delta: number) => {
     setQuantities((prev) => {
       const cur = prev[bikeKey] ?? 0;
       const next = Math.min(5, Math.max(0, cur + delta));
       if (next === cur) return prev;
+      
+      // Debug log to show which bike is being updated
+      if (typeof window !== "undefined") {
+        console.log(`Updated bike: ${bikeKey}, quantity: ${next}`);
+      }
+      
       return { ...prev, [bikeKey]: next };
     });
   };
@@ -75,10 +113,11 @@ export function BikesGroupedClient({ groupedBikes }: { groupedBikes: GroupedBike
   const totalPurchaseAmount: number = groupedBikes.reduce((sum, group) => {
     return (
       sum +
-      group.items.reduce((groupSum, bike) => {
-        const bikeKey = bike.BikeId || `${group.variant}-${bike.VehicleName}`;
+      group.items.reduce((groupSum, bike, idx) => {
+        const bikeKey = getBikeKey(group.variant, bike, idx);
         const qty = quantities[bikeKey] ?? 0;
-        return groupSum + qty * (bike.OnRoadPrice || 0);
+        const price = typeof bike.OnRoadPrice === 'string' ? parseFloat(bike.OnRoadPrice) : (bike.OnRoadPrice || 0);
+        return groupSum + qty * price;
       }, 0)
     );
   }, 0);
@@ -117,8 +156,8 @@ export function BikesGroupedClient({ groupedBikes }: { groupedBikes: GroupedBike
 
               {/* Models list */}
               <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-                {group.items.map((bike: Bike) => {
-                  const bikeKey = bike.BikeId || `${group.variant}-${bike.VehicleName}`;
+                {group.items.map((bike: Bike, idx: number) => {
+                  const bikeKey = getBikeKey(group.variant, bike, idx);
                   const qty = quantities[bikeKey] ?? 0;
                   return (
                     <div

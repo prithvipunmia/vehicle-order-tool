@@ -6,11 +6,11 @@ interface Bike {
   BikeId?: string;
   VehicleName: string;
   Variant?: string;
-  ExShowroomPrice?: number;
-  Tax?: number;
-  Insurance?: number;
-  Ew?: number;
-  OnRoadPrice: number;
+  ExShowroomPrice?: string;
+  Tax?: string;
+  Insurance?: string;
+  Ew?: string;
+  OnRoadPrice: string;
 }
 
 interface GroupedBike {
