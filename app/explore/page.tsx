@@ -1,8 +1,48 @@
 import { getBikes } from "../../lib/googlesheets";
+import React from "react";
+import { BikesGroupedClient } from "./BikesGroupedClient";
+
+interface Bike {
+  BikeId?: string;
+  VehicleName: string;
+  Variant?: string;
+  ExShowroomPrice?: number;
+  Tax?: number;
+  Insurance?: number;
+  Ew?: number;
+  OnRoadPrice: number;
+}
+
+interface GroupedBike {
+  variant: string;
+  items: Bike[];
+}
+
+/**
+ * Server component: fetches bikes and groups them by Variant (column C).
+ * If Variant is missing, falls back to VehicleName so every bike gets grouped.
+ */
+function groupByVariant(bikes: Bike[] = []): GroupedBike[] {
+  const groups: Record<string, Bike[]> = {};
+  bikes.forEach((b) => {
+    // Assumes your sheet columns map to these keys:
+    // b.VehicleName, b.Variant, b.BikeId, b.OnRoadPrice, etc.
+    const variant = (b.Variant || b.VehicleName || "Other").trim();
+    const key = variant || "Other";
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(b);
+  });
+
+  // Convert to array for predictable ordering
+  return Object.entries(groups).map(([variant, items]) => ({
+    variant,
+    items,
+  }));
+}
 
 export default async function ExplorePage() {
-  // Fetch bikes directly on the server
   const bikes = await getBikes();
+  const grouped = groupByVariant(bikes || []);
 
   return (
     <main className="min-h-screen bg-gray-50">
@@ -13,7 +53,10 @@ export default async function ExplorePage() {
           <a href="/explore" className="text-blue-600 font-medium">
             Explore
           </a>
-          <a href="/previous-orders" className="text-gray-600 hover:text-blue-600">
+          <a
+            href="/previous-orders"
+            className="text-gray-600 hover:text-blue-600"
+          >
             Previous Orders
           </a>
         </div>
@@ -22,19 +65,12 @@ export default async function ExplorePage() {
       {/* Explore Section */}
       <section className="p-8">
         <h2 className="text-2xl font-bold mb-6">Explore Bikes</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {bikes.map((bike) => (
-            <div
-              key={bike.BikeId}
-              className="border p-4 rounded bg-white shadow-sm flex flex-col gap-2"
-            >
-              <h3 className="font-semibold">{bike.VehicleName}</h3>
-              <p className="text-gray-600">{bike.Variant}</p>
-              <p className="text-blue-600 font-bold">₹{bike.OnRoadPrice}</p>
-            </div>
-          ))}
-        </div>
+
+        {/* Client component renders interactive grouped UI */}
+        <BikesGroupedClient groupedBikes={grouped} />
       </section>
     </main>
   );
 }
+
+export type { Bike, GroupedBike };
