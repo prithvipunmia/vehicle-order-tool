@@ -11,6 +11,7 @@ interface Bike {
   Insurance?: string;
   Ew?: string;
   OnRoadPrice: string;
+  Colors?: string[];
 }
 
 interface GroupedBike {

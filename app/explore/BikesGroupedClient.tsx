@@ -12,43 +12,48 @@ import type { Bike, GroupedBike } from "./page";
  *
  * Behavior:
  *  - Shows each variant as a group (e.g., Activa)
- *  - Each individual bike has its own quantity control (min 0, max 5)
+ *  - Each color has its own quantity control (min 0, max 5)
  *  - Quantities persist to localStorage under key "bike-quantities"
- *  - Shows total selected across all bikes
+ *  - Shows total selected across all bikes and colors
  */
 export function BikesGroupedClient({ groupedBikes }: { groupedBikes: GroupedBike[] }) {
   const router = useRouter();
   
-  // Generate unique key for each bike with fallback strategy - memoized
-  const getBikeKey = useMemo(() => {
-    return (variant: string, bike: Bike, index: number): string => {
-      // Use BikeId as primary key if available
-      if (bike.BikeId && bike.BikeId.trim()) {
-        // But append index to ensure uniqueness even if BikeIds are duplicated
-        return `${bike.BikeId}-${index}`;
-      }
-      // Fallback: construct unique key from available data
-      const fallbackKey = `${variant}-${bike.VehicleName}-${bike.ExShowroomPrice}`;
-      return `${fallbackKey}-${index}`;
+  // Generate unique key for each bike + color combination
+  const getUniqueKey = useMemo(() => {
+    return (variant: string, vehicleName: string, price: string, index: number, color?: string): string => {
+      // Create a truly unique key using all identifying information
+      const baseKey = `${variant}__${vehicleName}__${price}__${index}`;
+      return color ? `${baseKey}__${color}` : baseKey;
     };
   }, []);
 
-  // Build initial quantities keyed by bike ID
+  // Build initial quantities keyed by unique bike+color key
   const initial = useMemo(() => {
     const map: Record<string, number> = {};
     groupedBikes.forEach((g) => {
       g.items.forEach((bike, idx) => {
-        const bikeKey = getBikeKey(g.variant, bike, idx);
-        map[bikeKey] = 0;
+        const baseKey = getUniqueKey(g.variant, bike.VehicleName, bike.OnRoadPrice, idx);
+        // Create a key for each color or a default key if no colors
+        if (bike.Colors && bike.Colors.length > 0) {
+          bike.Colors.forEach((color) => {
+            const colorKey = getUniqueKey(g.variant, bike.VehicleName, bike.OnRoadPrice, idx, color);
+            map[colorKey] = 0;
+          });
+        } else {
+          map[baseKey] = 0;
+        }
       });
     });
     return map;
-  }, [groupedBikes]);
+  }, [groupedBikes, getUniqueKey]);
 
   const [quantities, setQuantities] = useState<Record<string, number>>(() => {
     try {
-      // Always start with initial keys only, ignore stale localStorage
-      return initial;
+      const stored = localStorage.getItem("bike-quantities");
+      const parsed = stored ? JSON.parse(stored) : {};
+      // Merge with initial to add any new color keys
+      return { ...initial, ...parsed };
     } catch {
       return initial;
     }
@@ -56,28 +61,28 @@ export function BikesGroupedClient({ groupedBikes }: { groupedBikes: GroupedBike
 
   // Whenever groupedBikes changes, sync quantities with valid keys only
   useEffect(() => {
-    console.log("=== BIKES GROUPING RECOMPUTED ===");
-    console.log("GroupedBikes:", groupedBikes);
-    
     setQuantities((prev) => {
       const next: Record<string, number> = {};
       
       // Only keep quantities for bikes that currently exist
       groupedBikes.forEach((g) => {
-        console.log(`Processing variant: ${g.variant}`);
         g.items.forEach((bike, idx) => {
-          const bikeKey = getBikeKey(g.variant, bike, idx);
-          console.log(`  Bike ${idx}: BikeId="${bike.BikeId}", Name="${bike.VehicleName}", Key="${bikeKey}"`);
-          next[bikeKey] = prev[bikeKey] ?? 0;
+          const baseKey = getUniqueKey(g.variant, bike.VehicleName, bike.OnRoadPrice, idx);
+          if (bike.Colors && bike.Colors.length > 0) {
+            bike.Colors.forEach((color) => {
+              const colorKey = getUniqueKey(g.variant, bike.VehicleName, bike.OnRoadPrice, idx, color);
+              next[colorKey] = prev[colorKey] ?? 0;
+            });
+          } else {
+            next[baseKey] = prev[baseKey] ?? 0;
+          }
         });
       });
       
-      console.log("Final quantity keys:", Object.keys(next));
-      console.log("Keys are unique?", new Set(Object.keys(next)).size === Object.keys(next).length);
       return next;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [groupedBikes]);
+  }, [groupedBikes, getUniqueKey]);
 
   useEffect(() => {
     try {
@@ -93,31 +98,42 @@ export function BikesGroupedClient({ groupedBikes }: { groupedBikes: GroupedBike
     };
   }, []);
 
-  const changeQty = (bikeKey: string, delta: number) => {
+  const changeQty = (key: string, delta: number) => {
     setQuantities((prev) => {
-      const cur = prev[bikeKey] ?? 0;
+      const cur = prev[key] ?? 0;
       const next = Math.min(5, Math.max(0, cur + delta));
       if (next === cur) return prev;
       
-      // Debug log to show which bike is being updated
-      if (typeof window !== "undefined") {
-        console.log(`Updated bike: ${bikeKey}, quantity: ${next}`);
-      }
-      
-      return { ...prev, [bikeKey]: next };
+      return { ...prev, [key]: next };
     });
   };
 
-  const totalSelected: number = Object.values(quantities).reduce((s: number, v) => s + (v || 0), 0);
+  const totalSelected: number = Object.entries(quantities).reduce((total, [key, qty]) => {
+    // Each entry is a single vehicle-color combination, so just add up all quantities
+    return total + (qty || 0);
+  }, 0);
 
   const totalPurchaseAmount: number = groupedBikes.reduce((sum, group) => {
     return (
       sum +
       group.items.reduce((groupSum, bike, idx) => {
-        const bikeKey = getBikeKey(group.variant, bike, idx);
-        const qty = quantities[bikeKey] ?? 0;
+        const baseKey = getUniqueKey(group.variant, bike.VehicleName, bike.OnRoadPrice, idx);
         const price = typeof bike.OnRoadPrice === 'string' ? parseFloat(bike.OnRoadPrice) : (bike.OnRoadPrice || 0);
-        return groupSum + qty * price;
+        
+        if (bike.Colors && bike.Colors.length > 0) {
+          // Sum quantities across all colors for this bike
+          return (
+            groupSum +
+            bike.Colors.reduce((colorSum, color) => {
+              const colorKey = getUniqueKey(group.variant, bike.VehicleName, bike.OnRoadPrice, idx, color);
+              const qty = quantities[colorKey] ?? 0;
+              return colorSum + qty * price;
+            }, 0)
+          );
+        } else {
+          const qty = quantities[baseKey] ?? 0;
+          return groupSum + qty * price;
+        }
       }, 0)
     );
   }, 0);
@@ -127,7 +143,7 @@ export function BikesGroupedClient({ groupedBikes }: { groupedBikes: GroupedBike
       alert("Please select at least one bike");
       return;
     }
-    router.push("/order/confirmation");
+    router.push("/confirmation");
   };
 
   return (
@@ -155,49 +171,100 @@ export function BikesGroupedClient({ groupedBikes }: { groupedBikes: GroupedBike
               </div>
 
               {/* Models list */}
-              <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="mt-4 space-y-4">
                 {group.items.map((bike: Bike, idx: number) => {
-                  const bikeKey = getBikeKey(group.variant, bike, idx);
-                  const qty = quantities[bikeKey] ?? 0;
+                  const baseKey = getUniqueKey(group.variant, bike.VehicleName, bike.OnRoadPrice, idx);
+                  const hasColors = bike.Colors && bike.Colors.length > 0;
+                  
+                  // Calculate total qty for this bike across all colors
+                  const bikeTotal = hasColors && bike.Colors
+                    ? bike.Colors.reduce((sum, color) => {
+                        const colorKey = getUniqueKey(group.variant, bike.VehicleName, bike.OnRoadPrice, idx, color);
+                        return sum + (quantities[colorKey] ?? 0);
+                      }, 0)
+                    : quantities[baseKey] ?? 0;
+                  
                   return (
                     <div
-                      key={bikeKey}
-                      className="flex items-center justify-between border border-gray-200 rounded-lg p-4 bg-white shadow-sm hover:shadow-md transition-shadow"
+                      key={baseKey}
+                      className="border border-gray-200 rounded-lg p-4 bg-white shadow-sm hover:shadow-md transition-shadow"
                     >
-                      <div>
-                        <div className="font-bold text-gray-900 text-base">{bike.VehicleName}</div>
-                        <div className="text-lg text-green-600 font-bold mt-2">
-                          ₹{bike.OnRoadPrice}
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex-1">
+                          <div className="font-bold text-gray-900 text-base">{bike.VehicleName}</div>
+                          <div className="text-lg text-green-600 font-bold mt-1">
+                            ₹{bike.OnRoadPrice}
+                          </div>
+                          {bikeTotal > 0 && (
+                            <div className="text-sm text-blue-600 font-medium mt-1">
+                              Total for this model: {bikeTotal}
+                            </div>
+                          )}
                         </div>
                       </div>
 
-                      {/* Individual bike quantity controls */}
-                      <div className="flex items-center gap-2">
-                        <button
-                          aria-label={`Decrease ${bike.VehicleName} quantity`}
-                          onClick={() => changeQty(bikeKey, -1)}
-                          disabled={qty <= 0}
-                          className="w-9 h-9 flex items-center justify-center rounded-md border-2 border-gray-300 bg-white text-gray-700 hover:bg-red-50 hover:border-red-400 hover:text-red-600 disabled:opacity-40 disabled:hover:bg-white disabled:hover:border-gray-300 disabled:hover:text-gray-700 transition-colors font-semibold"
-                        >
-                          <span className="text-xl leading-none">−</span>
-                        </button>
-
-                        <div
-                          aria-live="polite"
-                          className="w-12 text-center font-bold text-lg text-blue-600 bg-blue-50 rounded-md py-1"
-                        >
-                          {qty}
+                      {/* Color Selection with Quantity Controls */}
+                      {hasColors && bike.Colors ? (
+                        <div className="mt-4 pt-4 border-t border-gray-200 space-y-3">
+                          <label className="block text-sm font-semibold text-gray-700">Select Color & Quantity:</label>
+                          {bike.Colors.map((color) => {
+                            const colorKey = getUniqueKey(group.variant, bike.VehicleName, bike.OnRoadPrice, idx, color);
+                            const qty = quantities[colorKey] ?? 0;
+                            return (
+                              <div key={color} className="flex items-center justify-between bg-gray-50 p-3 rounded-md">
+                                <span className="font-medium text-gray-700">{color}</span>
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    aria-label={`Decrease ${color} quantity`}
+                                    onClick={() => changeQty(colorKey, -1)}
+                                    disabled={qty <= 0}
+                                    className="w-8 h-8 flex items-center justify-center rounded-md border-2 border-gray-300 bg-white text-gray-700 hover:bg-red-50 hover:border-red-400 hover:text-red-600 disabled:opacity-40 transition-colors font-semibold"
+                                  >
+                                    −
+                                  </button>
+                                  <div className="w-10 text-center font-bold text-lg text-blue-600 bg-blue-50 rounded-md py-1">
+                                    {qty}
+                                  </div>
+                                  <button
+                                    aria-label={`Increase ${color} quantity`}
+                                    onClick={() => changeQty(colorKey, +1)}
+                                    disabled={qty >= 5}
+                                    className="w-8 h-8 flex items-center justify-center rounded-md border-2 border-gray-300 bg-white text-gray-700 hover:bg-green-50 hover:border-green-400 hover:text-green-600 disabled:opacity-40 transition-colors font-semibold"
+                                  >
+                                    +
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
-
-                        <button
-                          aria-label={`Increase ${bike.VehicleName} quantity`}
-                          onClick={() => changeQty(bikeKey, +1)}
-                          disabled={qty >= 5}
-                          className="w-9 h-9 flex items-center justify-center rounded-md border-2 border-gray-300 bg-white text-gray-700 hover:bg-green-50 hover:border-green-400 hover:text-green-600 disabled:opacity-40 disabled:hover:bg-white disabled:hover:border-gray-300 disabled:hover:text-gray-700 transition-colors font-semibold"
-                        >
-                          <span className="text-xl leading-none">+</span>
-                        </button>
-                      </div>
+                      ) : (
+                        /* No colors - show single quantity control */
+                        <div className="mt-4 pt-4 border-t border-gray-200">
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">Quantity:</label>
+                          <div className="flex items-center gap-2">
+                            <button
+                              aria-label={`Decrease ${bike.VehicleName} quantity`}
+                              onClick={() => changeQty(baseKey, -1)}
+                              disabled={bikeTotal <= 0}
+                              className="w-8 h-8 flex items-center justify-center rounded-md border-2 border-gray-300 bg-white text-gray-700 hover:bg-red-50 hover:border-red-400 hover:text-red-600 disabled:opacity-40 transition-colors font-semibold"
+                            >
+                              −
+                            </button>
+                            <div className="w-10 text-center font-bold text-lg text-blue-600 bg-blue-50 rounded-md py-1">
+                              {bikeTotal}
+                            </div>
+                            <button
+                              aria-label={`Increase ${bike.VehicleName} quantity`}
+                              onClick={() => changeQty(baseKey, +1)}
+                              disabled={bikeTotal >= 5}
+                              className="w-8 h-8 flex items-center justify-center rounded-md border-2 border-gray-300 bg-white text-gray-700 hover:bg-green-50 hover:border-green-400 hover:text-green-600 disabled:opacity-40 transition-colors font-semibold"
+                            >
+                              +
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   );
                 })}
